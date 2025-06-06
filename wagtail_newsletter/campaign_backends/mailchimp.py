@@ -99,7 +99,9 @@ class MailchimpCampaignBackend(CampaignBackend):
         }
 
     def get_audiences(self) -> "list[Audience]":
-        audiences = self.client.lists.get_all_lists()["lists"]
+        audiences = self.client.lists.get_all_lists(count=1000, sort_dir="DESC")[
+            "lists"
+        ]
         return [
             Audience(
                 id=audience["id"],
