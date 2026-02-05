@@ -27,6 +27,8 @@ LIST_ID = "test-audience-id"
 SEGMENT_ID = 12345
 SUBJECT = "Test Subject"
 HTML = "<h1>Test HTML</h1>"
+FROM_NAME = "Test Name"
+REPLY_TO = "reply_to@example.com"
 CAMPAIGN_ID = "test-campaign-id"
 CAMPAIGN_WEB_ID = "test-web-id"
 NEW_CAMPAIGN_ID = "test-new-campaign-id"
@@ -132,6 +134,8 @@ def test_create_campaign(
             recipients=recipients_object,
             subject=SUBJECT,
             html=HTML,
+            from_name=FROM_NAME,
+            reply_to=REPLY_TO,
         )
         == CAMPAIGN_ID
     )
@@ -139,8 +143,8 @@ def test_create_campaign(
     expected_body = {
         **({"recipients": recipients_data} if recipients_data else {}),
         "settings": {
-            "from_name": settings.WAGTAIL_NEWSLETTER_FROM_NAME,
-            "reply_to": settings.WAGTAIL_NEWSLETTER_REPLY_TO,
+            "from_name": FROM_NAME,
+            "reply_to": REPLY_TO,
             "subject_line": SUBJECT,
         },
         "type": "regular",
@@ -159,6 +163,8 @@ def test_create_campaign_handle_create_exception(backend: MockMailchimpCampaignB
             recipients=None,
             subject="Test Subject",
             html="<h1>Test HTML</h1>",
+            from_name=FROM_NAME,
+            reply_to=REPLY_TO,
         )
 
     assert error.match(r"Error while creating campaign")
@@ -175,6 +181,8 @@ def test_create_campaign_handle_content_exception(
             recipients=None,
             subject="Test Subject",
             html="<h1>Test HTML</h1>",
+            from_name=FROM_NAME,
+            reply_to=REPLY_TO,
         )
 
     assert error.match(r"Error while saving campaign content")
@@ -202,14 +210,16 @@ def test_update_campaign(
         recipients=recipients_object,
         subject=SUBJECT,
         html=HTML,
+        from_name=FROM_NAME,
+        reply_to=REPLY_TO,
     )
     assert campaign_id == CAMPAIGN_ID
 
     expected_body = {
         **({"recipients": recipients_data} if recipients_data else {}),
         "settings": {
-            "from_name": settings.WAGTAIL_NEWSLETTER_FROM_NAME,
-            "reply_to": settings.WAGTAIL_NEWSLETTER_REPLY_TO,
+            "from_name": FROM_NAME,
+            "reply_to": REPLY_TO,
             "subject_line": SUBJECT,
         },
     }
@@ -235,6 +245,8 @@ def test_update_campaign_not_found(backend: MockMailchimpCampaignBackend, settin
         recipients=CustomRecipients(audience=LIST_ID),
         subject=SUBJECT,
         html=HTML,
+        from_name=FROM_NAME,
+        reply_to=REPLY_TO,
     )
     assert campaign_id == NEW_CAMPAIGN_ID
 
@@ -243,8 +255,8 @@ def test_update_campaign_not_found(backend: MockMailchimpCampaignBackend, settin
             "list_id": LIST_ID,
         },
         "settings": {
-            "from_name": settings.WAGTAIL_NEWSLETTER_FROM_NAME,
-            "reply_to": settings.WAGTAIL_NEWSLETTER_REPLY_TO,
+            "from_name": FROM_NAME,
+            "reply_to": REPLY_TO,
             "subject_line": SUBJECT,
         },
     }
@@ -268,6 +280,8 @@ def test_update_campaign_handle_update_exception(backend: MockMailchimpCampaignB
             recipients=None,
             subject="Test Subject",
             html="<h1>Test HTML</h1>",
+            from_name=FROM_NAME,
+            reply_to=REPLY_TO,
         )
 
     assert error.match(r"Error while updating campaign")
@@ -396,10 +410,15 @@ def test_log_and_raise(caplog: pytest.LogCaptureFixture):
 
 def test_inject_campaign_settings():
     class InjectBackend(MockMailchimpCampaignBackend):
-        def get_campaign_request_body(self, *, recipients, subject):
+        def get_campaign_request_body(
+            self, *, recipients, subject, from_name, reply_to
+        ):
             return dict(
                 super().get_campaign_request_body(
-                    recipients=recipients, subject=subject
+                    recipients=recipients,
+                    subject=subject,
+                    from_name=from_name,
+                    reply_to=reply_to,
                 ),
                 test_key="test_value",
             )
@@ -410,6 +429,8 @@ def test_inject_campaign_settings():
         recipients=None,
         subject="Test Subject",
         html="<h1>Test HTML</h1>",
+        from_name=FROM_NAME,
+        reply_to=REPLY_TO,
     )
 
     expected_body = {
@@ -468,6 +489,46 @@ def test_schedule_campaign_invalid_time(backend: MockMailchimpCampaignBackend):
         backend.schedule_campaign(CAMPAIGN_ID, SCHEDULE_TIME + timedelta(minutes=1))
 
     assert error.match("Schedule time must be in 15 minute intervals")
+
+
+@pytest.mark.parametrize(
+    "schedule_time",
+    [
+        datetime(2024, 8, 10, 16, 0, tzinfo=timezone.utc),  # :00
+        datetime(2024, 8, 10, 16, 15, tzinfo=timezone.utc),  # :15
+        datetime(2024, 8, 10, 16, 30, tzinfo=timezone.utc),  # :30
+        datetime(2024, 8, 10, 16, 45, tzinfo=timezone.utc),  # :45
+    ],
+)
+def test_validate_schedule_time_valid(
+    backend: MockMailchimpCampaignBackend, schedule_time
+):
+    """Test that valid schedule times (15-minute intervals) pass validation."""
+    # Should not raise any exception
+    backend.validate_schedule_time(schedule_time)
+
+
+@pytest.mark.parametrize(
+    "schedule_time",
+    [
+        datetime(2024, 8, 10, 16, 1, tzinfo=timezone.utc),  # :01
+        datetime(2024, 8, 10, 16, 7, tzinfo=timezone.utc),  # :07
+        datetime(2024, 8, 10, 16, 22, tzinfo=timezone.utc),  # :22
+        datetime(2024, 8, 10, 16, 37, tzinfo=timezone.utc),  # :37
+        datetime(2024, 8, 10, 16, 59, tzinfo=timezone.utc),  # :59
+        datetime(2024, 8, 10, 16, 30, 30, tzinfo=timezone.utc),  # with seconds
+        datetime(
+            2024, 8, 10, 16, 30, 0, 123456, tzinfo=timezone.utc
+        ),  # with microseconds
+    ],
+)
+def test_validate_schedule_time_invalid(
+    backend: MockMailchimpCampaignBackend, schedule_time
+):
+    """Test that invalid schedule times (not 15-minute intervals) raise errors."""
+    with pytest.raises(CampaignBackendError) as error:
+        backend.validate_schedule_time(schedule_time)
+    assert "Schedule time must be in 15 minute intervals" in str(error.value.message)
 
 
 def test_unschedule_campaign(backend: MockMailchimpCampaignBackend):

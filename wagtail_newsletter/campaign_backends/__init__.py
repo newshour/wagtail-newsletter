@@ -49,6 +49,8 @@ class CampaignBackend(ABC):
         recipients: "Optional[models.NewsletterRecipientsBase]",
         subject: str,
         html: str,
+        from_name: str,
+        reply_to: str,
     ) -> str: ...
 
     @abstractmethod
@@ -59,6 +61,10 @@ class CampaignBackend(ABC):
 
     @abstractmethod
     def send_campaign(self, campaign_id: str) -> None: ...
+
+    def validate_schedule_time(self, schedule_time: datetime) -> None:  # noqa: B027
+        """Validate schedule time. Override in subclass if backend has restrictions."""
+        pass
 
     @abstractmethod
     def schedule_campaign(self, campaign_id: str, schedule_time: datetime) -> None: ...

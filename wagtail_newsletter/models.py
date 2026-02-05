@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
-from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models
 from django.http import HttpResponse
 from django.template.loader import render_to_string
@@ -156,14 +157,30 @@ class NewsletterPageMixin(Page):
     def get_newsletter_context(self) -> "dict[str, Any]":
         return {"page": self}
 
-    def get_newsletter_html(self) -> SafeString:
+    def get_newsletter_html(self, extra_context=None) -> SafeString:
+        context = {
+            **self.get_newsletter_context(),
+            **(extra_context or {}),
+        }
         return render_to_string(
             template_name=self.get_newsletter_template(),
-            context=self.get_newsletter_context(),
+            context=context,
         )
 
     def get_newsletter_subject(self) -> str:
         return self.newsletter_subject or self.title
+
+    def get_newsletter_from_name(self) -> str:
+        from_name = getattr(settings, "WAGTAIL_NEWSLETTER_FROM_NAME", None)
+        if from_name is None:
+            raise ImproperlyConfigured("WAGTAIL_NEWSLETTER_FROM_NAME is not set")
+        return from_name
+
+    def get_newsletter_reply_to(self) -> str:
+        reply_to = getattr(settings, "WAGTAIL_NEWSLETTER_REPLY_TO", None)
+        if reply_to is None:
+            raise ImproperlyConfigured("WAGTAIL_NEWSLETTER_REPLY_TO is not set")
+        return reply_to
 
     def serve_preview(self, request, mode_name):  # type: ignore
         if mode_name == "newsletter":
